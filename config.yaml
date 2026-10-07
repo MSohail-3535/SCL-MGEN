@@ -1,0 +1,54 @@
+seed: 42 
+dataset: multitude
+data_path: data/processed/multitude.jsonl
+output_dir: results
+folds: 5 
+split:
+  fractions: [0.70, 0.15, 0.15] # Nested train/validation/internal test
+  group_sources: true 
+model:
+  backbone: BAAI/bge-m3 
+  revision: main 
+  max_length: 8192 
+  streams: [word, sentence, document]
+  refinement_blocks: 2 
+  heads: 16 
+  feedforward: 4096 
+  fusion_dim: 1024 
+  fusion_heads: 16 
+  fusion_feedforward: 4096 
+  dropout: 0.1 
+  projection_hidden: 1024 
+  projection_dim: 128 
+  projection_layers: 2 
+  evidential: true
+  evidence_activation: softplus 
+  gradient_checkpointing: true 
+training:
+  stage1_epochs: 10 
+  stage2_epochs: 10 
+  frozen_epochs: 5 
+  stage1_batch: 32 
+  stage2_batch: 16 
+  stage2_accumulation: 4 
+  stage1_lr: 0.00002 
+  stage2_lr: 0.00001 
+  temperature: 0.07 
+  optimizer: adamw 
+  weight_decay: 0.01 
+  betas: [0.9, 0.999] 
+  epsilon: 0.00000001 
+  scheduler: cosine 
+  warmup_fraction: 0.1 
+  beta: 0.1 
+  loss_coefficient: 1.0 
+  loss_mode: printed 
+  class_weights: [10.6, 1.0] 
+  precision: fp16 
+  eval_batch: 16 
+  num_workers: 0 
+  deterministic: true 
+evaluation:
+  minimum_coverage: 0.9 
+  ece_bins: 15 
+  embedding_sample: 2000 
