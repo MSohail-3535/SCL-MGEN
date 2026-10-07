@@ -1,0 +1,53 @@
+import argparse
+import hashlib
+import json
+from pathlib import Path
+
+from scl_mgen.config import write_json
+from scl_mgen.data import prepare
+
+def main():
+    parser = argparse.ArgumentParser(description="Convert an explicitly partitioned M4 source manifest")
+    parser.add_argument("--manifest", required=True)
+    parser.add_argument("--output", required=True)
+    args = parser.parse_args()
+    manifest_path = Path(args.manifest)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not manifest.get("files") or not isinstance(manifest.get("partition_provenance"), str) or not manifest["partition_provenance"].strip():
+        raise ValueError("A nonempty file manifest and partition provenance are required")
+    output = Path(args.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    staging = output.with_suffix(".staging.jsonl")
+    evidence, seen_humans = [], set()
+    with staging.open("w", encoding="utf-8") as writer:
+        for entry in manifest["files"]:
+            required = {"path", "language", "domain", "split", "text_field", "label", "generator", "sha256"}
+            if not required <= entry.keys():
+                raise ValueError(f"Manifest entry lacks fields: {sorted(required - entry.keys())}")
+            source = manifest_path.parent / entry["path"]
+            digest = hashlib.sha256(source.read_bytes()).hexdigest()
+            if digest != entry["sha256"]:
+                raise ValueError(f"File checksum mismatch: {source}")
+            evidence.append({**entry, "verified_sha256": digest})
+            with source.open(encoding="utf-8") as reader:
+                for index, line in enumerate(reader):
+                    raw = json.loads(line)
+                    source_value = raw.get("source_ID", raw.get("source_id", ""))
+                    source_id = str(source_value) if source_value is not None else ""
+                    record = {"id": f"{entry['split']}:{entry['language']}:{entry['domain']}:{source.name}:{index}:{entry['text_field']}", "text": raw[entry["text_field"]],
+                              "label": entry["label"], "split": entry["split"], "language": entry["language"],
+                              "generator": entry["generator"], "domain": entry["domain"], "source_id": source_id}
+                    if record["label"] == 0:
+                        text_hash = hashlib.sha256(record["text"].encode()).hexdigest()
+                        key = (entry["split"], text_hash)
+                        if key in seen_humans:
+                            continue
+                        seen_humans.add(key)
+                    writer.write(json.dumps(record, ensure_ascii=False) + "\n")
+    prepare(staging, output)
+    staging.unlink()
+    write_json(output.with_suffix(".manifest.json"), {"sources": evidence, "partition_provenance": manifest["partition_provenance"]})
+
+
+if __name__ == "__main__":
+    main()
